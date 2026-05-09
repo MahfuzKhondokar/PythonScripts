@@ -1,0 +1,279 @@
+import pygame
+import random
+import time
+import sys
+from collections import deque
+
+# ==========================================================
+# CONFIG
+# ==========================================================
+MAZE_CELLS = 15          # simpler maze
+CELL_SIZE = 25
+DELAY = 0.05
+
+VISION_RADIUS = 10
+NUM_ENTRANCES = 4
+
+RAT_SPEED = 1.0
+CAT_SPEED = 2.5
+
+# Colors
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+GREEN = (0, 200, 0)
+RED = (220, 20, 60)
+GOLD = (255, 215, 0)
+BLUE = (100, 149, 237)
+PINK = (255, 182, 193)
+
+# ==========================================================
+# MAZE GENERATION (SIMPLIFIED)
+# ==========================================================
+def generate_maze(cells):
+    rows = cols = cells * 2 + 1
+    maze = [[1] * cols for _ in range(rows)]
+
+    def carve(r, c):
+        maze[r][c] = 0
+        dirs = [(2,0), (-2,0), (0,2), (0,-2)]
+        random.shuffle(dirs)
+
+        for dr, dc in dirs:
+            nr, nc = r + dr, c + dc
+            if 1 <= nr < rows-1 and 1 <= nc < cols-1 and maze[nr][nc] == 1:
+                maze[r + dr//2][c + dc//2] = 0
+                carve(nr, nc)
+
+    carve(1, 1)
+
+    # make maze more open
+    for r in range(rows):
+        for c in range(cols):
+            if maze[r][c] == 1 and random.random() < 0.1:
+                maze[r][c] = 0
+
+    return maze
+
+# ==========================================================
+def in_bounds(maze, cell):
+    r, c = cell
+    return 0 <= r < len(maze) and 0 <= c < len(maze[0])
+
+def is_open(maze, cell):
+    r, c = cell
+    return in_bounds(maze, cell) and maze[r][c] == 0
+
+def neighbors(maze, cell):
+    r, c = cell
+    res = []
+    for dr, dc in [(1,0), (-1,0), (0,1), (0,-1)]:
+        nxt = (r + dr, c + dc)
+        if is_open(maze, nxt):
+            res.append(nxt)
+    return res
+
+def bfs_path(maze, start, goal, blocked=None):
+    if blocked is None:
+        blocked = set()
+
+    q = deque([start])
+    parent = {start: None}
+
+    while q:
+        cur = q.popleft()
+
+        for nxt in neighbors(maze, cur):
+            if nxt in parent:
+                continue
+            if nxt in blocked and nxt != goal:
+                continue
+
+            parent[nxt] = cur
+
+            if nxt == goal:
+                path = []
+                while nxt is not None:
+                    path.append(nxt)
+                    nxt = parent[nxt]
+                return path[::-1]
+
+            q.append(nxt)
+
+    return None
+
+def manhattan(a, b):
+    return abs(a[0]-b[0]) + abs(a[1]-b[1])
+
+# ==========================================================
+def create_border_openings(maze, num):
+    rows, cols = len(maze), len(maze[0])
+    candidates = []
+
+    for c in range(1, cols-1):
+        if maze[1][c] == 0:
+            candidates.append((0, c))
+        if maze[rows-2][c] == 0:
+            candidates.append((rows-1, c))
+
+    for r in range(1, rows-1):
+        if maze[r][1] == 0:
+            candidates.append((r, 0))
+        if maze[r][cols-2] == 0:
+            candidates.append((r, cols-1))
+
+    random.shuffle(candidates)
+
+    openings = []
+    for cell in candidates:
+        if len(openings) >= num:
+            break
+        r, c = cell
+        maze[r][c] = 0
+        openings.append(cell)
+
+    return openings
+
+# ==========================================================
+def draw(screen, maze, rat, cat, exit_cell, rat_path, cat_path):
+    screen.fill(BLACK)
+
+    rows, cols = len(maze), len(maze[0])
+
+    for r in range(rows):
+        for c in range(cols):
+            color = WHITE if maze[r][c] == 0 else BLACK
+            pygame.draw.rect(
+                screen, color,
+                pygame.Rect(c*CELL_SIZE, r*CELL_SIZE, CELL_SIZE, CELL_SIZE)
+            )
+
+    for r, c in rat_path:
+        pygame.draw.rect(screen, BLUE,
+            pygame.Rect(c*CELL_SIZE, r*CELL_SIZE, CELL_SIZE, CELL_SIZE)
+        )
+
+    for r, c in cat_path:
+        pygame.draw.rect(screen, PINK,
+            pygame.Rect(c*CELL_SIZE, r*CELL_SIZE, CELL_SIZE, CELL_SIZE)
+        )
+
+    er, ec = exit_cell
+    pygame.draw.rect(screen, GOLD,
+        pygame.Rect(ec*CELL_SIZE, er*CELL_SIZE, CELL_SIZE, CELL_SIZE)
+    )
+
+    rr, rc = rat
+    pygame.draw.circle(screen, GREEN,
+        (rc*CELL_SIZE + CELL_SIZE//2, rr*CELL_SIZE + CELL_SIZE//2),
+        CELL_SIZE//3
+    )
+
+    cr, cc = cat
+    pygame.draw.circle(screen, RED,
+        (cc*CELL_SIZE + CELL_SIZE//2, cr*CELL_SIZE + CELL_SIZE//2),
+        CELL_SIZE//3
+    )
+
+    pygame.display.flip()
+
+# ==========================================================
+def handle_events():
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            pygame.quit()
+            sys.exit()
+
+# ==========================================================
+def main():
+    maze = generate_maze(MAZE_CELLS)
+    openings = create_border_openings(maze, NUM_ENTRANCES)
+
+    random.shuffle(openings)
+
+    rat = openings[0]
+    cat = openings[1]
+    exit_cell = openings[2]
+
+    pygame.init()
+
+    screen = pygame.display.set_mode(
+        (len(maze[0]) * CELL_SIZE, len(maze) * CELL_SIZE)
+    )
+    pygame.display.set_caption("Cat vs Rat (Speed 2.5 vs 1.0)")
+
+    rat_path_hist = []
+    cat_path_hist = []
+
+    rat_acc = 0.0
+    cat_acc = 0.0
+
+    winner = None
+
+    while True:
+        handle_events()
+
+        # =========================
+        # WIN CONDITIONS
+        # =========================
+        if rat == cat:
+            winner = "Cat is the winner"
+            break
+
+        if rat == exit_cell:
+            winner = "Rat reached exit (Cat lost)"
+            break
+
+        # =========================
+        # RAT (speed = 1.0)
+        # =========================
+        rat_acc += RAT_SPEED
+
+        if rat_acc >= 1.0:
+            rat_acc -= 1.0
+
+            blocked = set()
+            if manhattan(rat, cat) <= VISION_RADIUS:
+                blocked.add(cat)
+                blocked.update(neighbors(maze, cat))
+
+            path = bfs_path(maze, rat, exit_cell, blocked)
+            if not path:
+                path = bfs_path(maze, rat, exit_cell)
+
+            if path and len(path) > 1:
+                rat = path[1]
+
+        rat_path_hist.append(rat)
+
+        # =========================
+        # CAT (speed = 2.5)
+        # =========================
+        cat_acc += CAT_SPEED
+
+        # can move multiple steps per frame
+        while cat_acc >= 1.0:
+            cat_acc -= 1.0
+
+            path = bfs_path(maze, cat, rat)
+            if path and len(path) > 1:
+                cat = path[1]
+
+        cat_path_hist.append(cat)
+
+        # =========================
+        # DRAW
+        # =========================
+        draw(screen, maze, rat, cat, exit_cell,
+             rat_path_hist, cat_path_hist)
+
+        time.sleep(DELAY)
+
+    print("\n" + winner)
+    pygame.display.set_caption(winner)
+
+    while True:
+        handle_events()
+        time.sleep(0.05)
+
+if __name__ == "__main__":
+    main()
