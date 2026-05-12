@@ -1,0 +1,247 @@
+import tkinter as tk
+from tkinter import messagebox
+import random
+import math
+
+# ==============================
+# Gun Settings
+# ==============================
+GUNS = {
+    "Pistol": {"radius": 20, "damage": 1},
+    "Rifle": {"radius": 15, "damage": 1},
+    "Sniper": {"radius": 10, "damage": 1}
+}
+
+# ==============================
+# Game Class
+# ==============================
+class ShootingGame:
+    def __init__(self, root, gun_name):
+        self.root = root
+        self.root.title("Python Aiming Game")
+        self.root.geometry("800x600")
+
+        self.gun_name = gun_name
+        self.gun = GUNS[gun_name]
+
+        self.canvas = tk.Canvas(root, width=800, height=600, bg="lightblue")
+        self.canvas.pack()
+
+        # Game stats
+        self.shots_left = 10
+        self.hits = 0
+        self.misses = 0
+
+        # Target settings
+        self.target_size = 50
+        self.target_x = random.randint(100, 700)
+        self.target_y = random.randint(100, 500)
+        self.target_dx = random.choice([-4, 4])
+        self.target_dy = random.choice([-3, 3])
+
+        # Mouse position
+        self.mouse_x = 400
+        self.mouse_y = 300
+
+        # Bindings
+        self.canvas.bind("<Motion>", self.move_gun)
+        self.canvas.bind("<Button-1>", self.shoot)
+
+        # Draw initial objects
+        self.target = None
+        self.crosshair = None
+        self.info_text = None
+
+        self.update_game()
+
+    # ------------------------------
+    # Mouse movement
+    # ------------------------------
+    def move_gun(self, event):
+        self.mouse_x = event.x
+        self.mouse_y = event.y
+
+    # ------------------------------
+    # Shoot action
+    # ------------------------------
+    def shoot(self, event):
+        if self.shots_left <= 0:
+            return
+
+        self.shots_left -= 1
+
+        # Distance from target center
+        center_x = self.target_x + self.target_size / 2
+        center_y = self.target_y + self.target_size / 2
+
+        distance = math.sqrt(
+            (event.x - center_x) ** 2 +
+            (event.y - center_y) ** 2
+        )
+
+        if distance <= self.target_size / 2:
+            self.hits += 1
+            self.target_x = random.randint(100, 700)
+            self.target_y = random.randint(100, 500)
+        else:
+            self.misses += 1
+
+        if self.shots_left == 0:
+            self.show_results()
+
+    # ------------------------------
+    # Move target
+    # ------------------------------
+    def move_target(self):
+        self.target_x += self.target_dx
+        self.target_y += self.target_dy
+
+        if self.target_x <= 0 or self.target_x + self.target_size >= 800:
+            self.target_dx *= -1
+
+        if self.target_y <= 0 or self.target_y + self.target_size >= 600:
+            self.target_dy *= -1
+
+    # ------------------------------
+    # Draw target
+    # ------------------------------
+    def draw_target(self):
+        self.canvas.create_oval(
+            self.target_x,
+            self.target_y,
+            self.target_x + self.target_size,
+            self.target_y + self.target_size,
+            fill="red",
+            outline="black",
+            width=2
+        )
+
+        # Bullseye
+        self.canvas.create_oval(
+            self.target_x + 15,
+            self.target_y + 15,
+            self.target_x + 35,
+            self.target_y + 35,
+            fill="white"
+        )
+
+    # ------------------------------
+    # Draw crosshair
+    # ------------------------------
+    def draw_crosshair(self):
+        r = self.gun["radius"]
+
+        self.canvas.create_line(
+            self.mouse_x - r, self.mouse_y,
+            self.mouse_x + r, self.mouse_y,
+            fill="black", width=2
+        )
+
+        self.canvas.create_line(
+            self.mouse_x, self.mouse_y - r,
+            self.mouse_x, self.mouse_y + r,
+            fill="black", width=2
+        )
+
+        self.canvas.create_oval(
+            self.mouse_x - r,
+            self.mouse_y - r,
+            self.mouse_x + r,
+            self.mouse_y + r,
+            outline="black",
+            width=2
+        )
+
+    # ------------------------------
+    # Draw HUD
+    # ------------------------------
+    def draw_info(self):
+        accuracy = (self.hits / max(1, self.hits + self.misses)) * 100
+
+        text = (
+            f"Gun: {self.gun_name}    "
+            f"Shots Left: {self.shots_left}    "
+            f"Hits: {self.hits}    "
+            f"Accuracy: {accuracy:.1f}%"
+        )
+
+        self.canvas.create_text(
+            400, 20,
+            text=text,
+            font=("Arial", 16, "bold"),
+            fill="darkblue"
+        )
+
+    # ------------------------------
+    # Main loop
+    # ------------------------------
+    def update_game(self):
+        if self.shots_left <= 0:
+            return
+
+        self.canvas.delete("all")
+        self.move_target()
+        self.draw_target()
+        self.draw_crosshair()
+        self.draw_info()
+
+        self.root.after(30, self.update_game)
+
+    # ------------------------------
+    # Show final results
+    # ------------------------------
+    def show_results(self):
+        accuracy = (self.hits / 10) * 100
+
+        if accuracy >= 80:
+            recommendation = "Excellent! You should try Sniper mode."
+        elif accuracy >= 50:
+            recommendation = "Good job! Rifle suits you well."
+        else:
+            recommendation = "Keep practicing with the Pistol."
+
+        messagebox.showinfo(
+            "Game Over",
+            f"Gun Used: {self.gun_name}\n"
+            f"Hits: {self.hits}\n"
+            f"Misses: {self.misses}\n"
+            f"Accuracy: {accuracy:.1f}%\n\n"
+            f"Recommendation:\n{recommendation}"
+        )
+
+        self.root.destroy()
+
+
+# ==============================
+# Gun Selection Window
+# ==============================
+def start_game(gun_name):
+    selection_window.destroy()
+
+    game_root = tk.Tk()
+    ShootingGame(game_root, gun_name)
+    game_root.mainloop()
+
+
+selection_window = tk.Tk()
+selection_window.title("Choose Your Gun")
+selection_window.geometry("300x250")
+
+label = tk.Label(
+    selection_window,
+    text="Select Your Gun",
+    font=("Arial", 18, "bold")
+)
+label.pack(pady=20)
+
+for gun in GUNS:
+    btn = tk.Button(
+        selection_window,
+        text=gun,
+        font=("Arial", 14),
+        width=15,
+        command=lambda g=gun: start_game(g)
+    )
+    btn.pack(pady=5)
+
+selection_window.mainloop()
